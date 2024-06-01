@@ -34,7 +34,7 @@ function install_node() {
 
 # 增加swap空间
 sudo mkdir /swap
-sudo fallocate -l 22G /swap/swapfile
+sudo fallocate -l 20G /swap/swapfile
 sudo chmod 600 /swap/swapfile
 sudo mkswap /swap/swapfile
 sudo swapon /swap/swapfile
@@ -56,7 +56,7 @@ echo "sysctl配置已重新加载"
 sudo apt update && sudo apt -y upgrade 
 
 # 安装wget、screen和git等组件
-sudo apt install git ufw bison screen binutils gcc make bsdmainutils -y
+sudo apt install git ufw bison screen binutils gcc make bsdmainutils cpulimit -y
 
 # 下载并安装gvm
 bash < <(curl -s -S -L https://raw.githubusercontent.com/moovweb/gvm/master/binscripts/gvm-installer)
@@ -76,22 +76,22 @@ if [ "$ARCH" = "x86_64" ]; then
   gvm use go1.17.13
   export GOROOT_BOOTSTRAP=$GOROOT
 
-  gvm install go1.20.2
-  gvm use go1.20.2
+  gvm install go1.20
+  gvm use go1.20
 elif [ "$ARCH" = "aarch64" ]; then
   gvm install go1.17.13 -B
   gvm use go1.17.13
   export GOROOT_BOOTSTRAP=$GOROOT
 
-  gvm install go1.20.2 -B
-  gvm use go1.20.2
+  gvm install go1.20 -B
+  gvm use go1.20
 else
   echo "Unsupported architecture: $ARCH"
   exit 1
 fi
 
 # 克隆仓库
-git clone https://github.com/quilibriumnetwork/ceremonyclient
+git clone https://github.com/a3165458/ceremonyclient.git
 
 # 构建Qclient
 cd ceremonyclient/client
@@ -99,7 +99,7 @@ GOEXPERIMENT=arenas go build -o qclient main.go
 sudo cp $HOME/ceremonyclient/client/qclient /usr/local/bin
 
 # 进入ceremonyclient/node目录
-cd #HOME
+cd $HOME
 cd ceremonyclient/node 
 git switch release
 
@@ -114,100 +114,73 @@ echo ====================================== 安装完成 =======================
 }
 
 
-
 # 节点安装功能
-function install_node_service() {
-
-# 检查是否以root用户执行脚本
-if [ "$(id -u)" != "0" ]; then
-   echo "该脚本必须以root权限运行" 1>&2
-   exit 1
+function install_node_mac() {
+# 安装 Homebrew 包管理器（如果尚未安装）
+if ! command -v brew &> /dev/null; then
+    echo "Homebrew 未安装。正在安装 Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 fi
 
-# 增加swap空间
-sudo mkdir /swap
-sudo fallocate -l 24G /swap/swapfile
-sudo chmod 600 /swap/swapfile
-sudo mkswap /swap/swapfile
-sudo swapon /swap/swapfile
-echo '/swap/swapfile swap swap defaults 0 0' >> /etc/fstab
+# 更新 Homebrew 并安装必要的软件包
+brew update
+brew install wget git screen bison gcc make
 
-# 向/etc/sysctl.conf文件追加内容
-echo -e "\n# 自定义最大接收和发送缓冲区大小" >> /etc/sysctl.conf
-echo "net.core.rmem_max=600000000" >> /etc/sysctl.conf
-echo "net.core.wmem_max=600000000" >> /etc/sysctl.conf
-
-echo "配置已添加到/etc/sysctl.conf"
-
-# 重新加载sysctl配置以应用更改
-sysctl -p
-
-echo "sysctl配置已重新加载"
-
-# 更新并升级Ubuntu软件包
-sudo apt update && sudo apt -y upgrade 
-
-# 安装wget、screen和git等组件
-sudo apt install git ufw bison screen binutils gcc make bsdmainutils -y
-
-# 安装GVM
+# 安装 gvm
 bash < <(curl -s -S -L https://raw.githubusercontent.com/moovweb/gvm/master/binscripts/gvm-installer)
-source /root/.gvm/scripts/gvm
+source $HOME/.gvm/scripts/gvm
 
+# 获取系统架构
+ARCH=$(uname -m)
+
+# 安装并使用 go1.4 作为 bootstrap
 gvm install go1.4 -B
 gvm use go1.4
 export GOROOT_BOOTSTRAP=$GOROOT
-gvm install go1.17.13
-gvm use go1.17.13
-export GOROOT_BOOTSTRAP=$GOROOT
-gvm install go1.20.2
-gvm use go1.20.2
+
+# 根据系统架构安装相应的 Go 版本
+if [ "$ARCH" = "x86_64" ]; then
+  gvm install go1.17.13
+  gvm use go1.17.13
+  export GOROOT_BOOTSTRAP=$GOROOT
+
+  gvm install go1.20
+  gvm use go1.20
+elif [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then
+  gvm install go1.17.13 -B
+  gvm use go1.17.13
+  export GOROOT_BOOTSTRAP=$GOROOT
+
+  gvm install go1.20 -B
+  gvm use go1.20
+else
+  echo "无法支持的版本: $ARCH"
+  exit 1
+fi
 
 # 克隆仓库
-git clone https://github.com/quilibriumnetwork/ceremonyclient
+git clone https://source.quilibrium.com/quilibrium/ceremonyclient.git
 
-# 进入ceremonyclient/node目录
-cd ceremonyclient/node 
+# 进入 ceremonyclient/node 目录
+cd $HOME
+cd ceremonyclient/node
+git switch release
 
-# 构建服务
-GOEXPERIMENT=arenas go install ./...
+# 赋予执行权限
+chmod +x release_autorun.sh
 
-# 写入服务
-sudo tee /lib/systemd/system/ceremonyclient.service > /dev/null <<EOF
-[Unit]
-Description=Ceremony Client GO App Service
+# 创建一个 screen 会话并运行命令
+screen -dmS Quili bash -c './release_autorun.sh'
 
-[Service]
-Type=simple
-Restart=always
-RestartSec=5S
-WorkingDirectory=/root/ceremonyclient/node
-Environment=GOEXPERIMENT=arenas
-ExecStart=/root/.gvm/pkgsets/go1.20.2/global/bin/node ./...
 
-[Install]
-WantedBy=multi-user.target
-EOF
+# 构建 Qclient
+cd ceremonyclient/client
+GOEXPERIMENT=arenas go build -o qclient main.go
+sudo cp $HOME/ceremonyclient/client/qclient /usr/local/bin
 
-# 重新加载 systemd 并启用并启动服务
-sudo systemctl daemon-reload
-sudo systemctl enable ceremonyclient
-sudo systemctl start ceremonyclient
 
-# 完成安装提示
 echo ====================================== 安装完成 =========================================
 
-}
-
-
-# 查看服务版本状态
-function check_ceremonyclient_service_status() {
-    systemctl status ceremonyclient
-}
-
-# 服务版本节点日志查询
-function view_logs() {
-    sudo journalctl -f -u ceremonyclient.service
 }
 
 # 查看常规版本节点日志
@@ -218,9 +191,9 @@ function check_service_status() {
 
 # 独立启动
 function run_node() {
-    screen -dmS Quili bash -c 'source /root/.gvm/scripts/gvm && gvm use go1.20.2 && cd ~/ceremonyclient/node && ./release_autorun.sh'
+    screen -dmS Quili bash -c "source /root/.gvm/scripts/gvm && gvm use go1.20 && cd ~/ceremonyclient/node && ./release_autorun.sh"
 
-    echo "=======================已启动quilibrium 挖矿 ========================================="
+    echo "=======================已启动quilibrium 挖矿 请使用screen 命令查询状态========================================="
 }
 
 function add_snapshots() {
@@ -231,7 +204,7 @@ rm -rf store
 cd ~
 mv store ~/ceremonyclient/node/.config
 
-screen -dmS Quili bash -c 'source /root/.gvm/scripts/gvm && gvm use go1.20.2 && cd ~/ceremonyclient/node && ./release_autorun.sh'
+screen -dmS Quili bash -c 'source /root/.gvm/scripts/gvm && gvm use go1.20 && cd ~/ceremonyclient/node && ./release_autorun.sh'
    
 }
 
@@ -259,28 +232,22 @@ function main_menu() {
     echo "请选择要执行的操作:"
     echo "1. 安装常规节点"
     echo "2. 查看常规版本节点日志"
-    echo "3. 安装服务版本节点（性能调度没有常规节点积极，可能奖励会更少）"
-    echo "4. 查看服务版本节点日志"
-    echo "5. 查看服务版本服务状态"
-    echo "6. 设置快捷键的功能"    
+    echo "3. Mac 常规节点安装"
     echo "=======================单独使用功能============================="
-    echo "7. 独立启动挖矿（安装好常规节点后搭配使用）"
+    echo "4. 独立启动挖矿（安装好常规节点后搭配使用）"
     echo "=========================备份功能================================"
-    echo "8. 备份文件"
+    echo "5. 备份文件"
     echo "=========================收米查询================================"
-    echo "9. 查询余额"
-    read -p "请输入选项（1-8）: " OPTION
+    echo "6. 查询余额"
+    read -p "请输入选项（1-6）: " OPTION
 
     case $OPTION in
     1) install_node ;;
     2) check_service_status ;;  
-    3) install_node_service ;; 
-    4) view_logs ;; 
-    5) check_ceremonyclient_service_status ;; 
-    6) check_and_set_alias ;;  
-    7) run_node ;;
-    8) backup_set ;;
-    9) check_balance ;;
+    3) install_node_mac ;; 
+    4) run_node ;;
+    5) backup_set ;;
+    6) check_balance ;;
     *) echo "无效选项。" ;;
     esac
 }
